@@ -114,8 +114,10 @@ class LALRParser:
 		self.nodeCount = 0
 		self.rowCount = 0
 
-		self.ruleDict = {}
+		# dictionaries to map rules with an index and vice-versa. used to handle reduce ids
+		self.ruleDict = {} 
 		self.invertedRuleDict = {}
+
 		ind = 1
 		for symbol, rules in self.grammar.productions.items():
 			for rule in rules:
@@ -123,9 +125,10 @@ class LALRParser:
 				self.ruleDict[t] = ind
 				ind += 1
 
-		self.mergedNodes = {}
-		self.table = None
-		self.createParser()
+		self.mergedNodes = {} # map merged nodes (same LR(0) items) to ids
+		self.table = None # parser table
+
+		self.createParser() # generate parser, graph + table + compression
 
 	def createParser(self):
 		node1 = []
@@ -148,11 +151,17 @@ class LALRParser:
 	def hashRule(self, symbol, right):
 		return (symbol, tuple(right) )
 
-	def getLR0(self, node):
+	def hashLR0item(self, node): # create hashable element with all rules of a LR(0) item (ignoring lookaheads), useful to merge nodes
 		s = set()
 		for rule in node:
 			s.add( (rule[0], tuple(rule[1]), tuple(rule[2])) )
 
+		return frozenset(s)
+
+	def hashLR1item(self, node): # create hashable element with all rules of a LR(0) item (ignoring lookaheads), useful to merge nodes
+		s = set()
+		for rule in node:
+			s.add( (rule[0], tuple(rule[1]), tuple(rule[2]), tuple(rule[3])) )
 		return frozenset(s)
 
 	def findNodesToMerge(self, gNode, vis):
@@ -160,7 +169,7 @@ class LALRParser:
 			return
 		vis.append(gNode)
 
-		m = self.getLR0(gNode.data)
+		m = self.hashLR0item(gNode.data)
 		if m not in self.mergedNodes:
 			self.mergedNodes[m] = gNode
 			gNode.rowId = self.rowCount
@@ -224,10 +233,7 @@ class LALRParser:
 
 
 	def advance(self, prod):
-		la = self.grammar.FIRST(prod[2][1:], set())
-		if len(la) == 0 or None in la:
-			la |= prod[3]
-
+		# generate next node (move dot forward in all productions)
 		right = []
 		if len(prod[2]) == 1:
 			right = []
@@ -236,40 +242,62 @@ class LALRParser:
 
 		return [prod[0], prod[1] + [prod[2][0]], right, prod[3] | set()]
 
-	def expandRule(self, toExpand, expanded, right, lookahead):
-		if len(right) > 0 and right[0] not in self.grammar.terminals:
-			newLA = self.grammar.FIRST(right[1:], set())
-			if len(newLA) == 0 or None in newLA:
-				newLA |= lookahead
+	def closure(self, rules, remainingSymbols, symbol, lookahead):
+		for right in self.grammar.productions[symbol]:
+			print(symbol, '->', right)
+			s = (symbol, tuple(right))
+			
+			#those this complete rule exist? if not, added it with lookahead
+			if s in rules and len(lookahead - rules[s]) == 0: # rule exists, and lookahead is included in the existing one
+				continue
+			else: # rule doesn't exist, or existing lookahead doesn't include the new one 
+				if s not in rules:
+					rules[s] = set()
+				rules[s] |= lookahead
 
-			if right[0] in expanded:
-				return
+				# apply closure to left most symbol of production?
+				if len(right) > 0 and right[0] not in self.grammar.terminals:
+					newLA = self.grammar.FIRST(right[1:], set())
+					if len(newLA) == 0 or None in newLA:
+						newLA |= lookahead
 
-			if right[0] not in toExpand:
-				toExpand[right[0]] = set()
-			toExpand[right[0]] |= newLA
+					nSymbol = right[0]
+					if nSymbol not in remainingSymbols:
+						remainingSymbols[nSymbol] = set()
+					remainingSymbols[nSymbol] |= newLA
 
-			#print(toExpand)
+		print(rules)
+
+	def getLookahead(self, right, lookahead):
+		la = self.grammar.FIRST(right[1:], set())
+		if len(la) == 0 or None in la:
+			la |= lookahead
+		return la
 
 	def expand(self, node):
 		graphNode = GraphNode()
-		toExpand = {} # dict that maps closure symbol to look-ahead symbols set
-		expanded = set()
+		remainingSymbols = {} # dict that maps closure symbol to look-ahead symbols set
 
+		expanded = set() # (symbol, right, lookahead)
+
+		# for current rules, get all symbols to apply closure and respective look-ahead
 		for rule in node:
 			symbol, left, right, lookahead = rule
-			self.expandRule(toExpand, expanded, right, lookahead)
+			if len(right) > 0 and right[0] not in self.grammar.terminals:
+				if right[0] not in remainingSymbols:
+					remainingSymbols[right[0]] = set()
+				remainingSymbols[right[0]] |= self.getLookahead(right, lookahead)
 
-		while len(toExpand) > 0:
-			symbol, lookahead = pop(toExpand)
+		# apply closure to all symbols, keep adding to the queue the left most symbols that belong to the new rules (or have new lookaheads)
+		newRules = {}
+		while len(remainingSymbols) > 0:
+			symbol, lookahead = pop(remainingSymbols)
+			self.closure(newRules, remainingSymbols, symbol, lookahead)
 
-			if symbol not in expanded:
-				for right in self.grammar.productions[symbol]:
-					node.append((symbol, [], right, lookahead))
-					self.expandRule(toExpand, expanded, right, lookahead)
+		for k in newRules:
+			node.append([k[0], [], k[1], newRules[k]])
 
-			expanded.add(symbol)
-
+		# generate transitions for each production, joining together those for the same input symbol
 		transitions = {}
 		for prod in node:
 			if len(prod[2]) > 0:
@@ -277,8 +305,8 @@ class LALRParser:
 					transitions[prod[2][0]] = []
 				transitions[prod[2][0]].append(self.advance(prod))
 
-
-		nodeHash = self.hashNode(node)
+		# update graph node, making sure that there are no repeated nodes (same rules with same lookaheads)
+		nodeHash = self.hashLR1item(node)
 		if nodeHash in self.graphNodes:
 			return self.graphNodes[nodeHash]
 
@@ -288,18 +316,13 @@ class LALRParser:
 
 		printNode(graphNode)
 
+		# recursively generate nodes connected to this one
 		for tr in transitions:
 			print('on', tr)
-			gNode = self.expand(transitions[tr])
+			gNode = self.expand(transitions[tr]) # will return an existing node if the generated node matches one
 			graphNode.addNeigh(tr, gNode)
 
 		return graphNode
-
-	def hashNode(self, node):
-		s = []
-		for i in node:
-			s.append((tuple(i[0]), tuple(i[1]), tuple(i[2]), tuple(i[3])))
-		return tuple(s)
 
 	def parse(self, inp):
 		queue = []
@@ -336,7 +359,7 @@ class LALRParser:
 				queue = queue[:-n]
 
 				children = [popped[i] for i in range(len(popped)) if i%2 == 0]
-				node = TreeNode(symbol, children)
+				node = TreeNode(symbol, *children)
 				queue.append(node)
 				r = queue[-2]
 				c = queue[-1].type
@@ -387,12 +410,12 @@ def readGrammar(f):
 	return Grammar(terminals, rules)
 
 
-g = readGrammar("grammar1.txt")
+g = readGrammar("grammar_lookahead.txt")
 parser = LALRParser(g, "S")
 
 
 class TreeNode(Token):
-	def __init__(self, type, children):
+	def __init__(self, type, *children):
 		self.type = type
 		self.children = children
 
@@ -411,7 +434,8 @@ class TreeNode(Token):
 				c.printTree(depth+1)
 
 
-inp = [Token('a', 3), Token('a', 5), Token('b', 4), Token('b', 1), Token('$')]
+#inp = [Token('a', 3), Token('a', 5), Token('b', 4), Token('b', 1), Token('$')]
+inp = [Token('a', 3), Token('b', 5), Token('b', 4), Token('a', 1), Token('$')]
 S = parser.parse(inp)
 S.printTree(0)
 
