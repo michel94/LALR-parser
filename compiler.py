@@ -1,40 +1,42 @@
 
+#Semantic specific classes
+
+class CHILD:
+	def __init__(self, ind):
+		self.index = ind
+
 class Token:
 	def __init__(self, type, *value):
 		self.type = type
-		self.value = value
+		self.value = None
+		if len(value) == 1:
+			self.value = value[0]
 
 	def isTerminal(self):
 		return True
 
 	def __repr__(self):
-		return self.type
-
-class Rule:
-	def __repr__(self):
-		s = "<" + self.name + ">" + " -> "
-		for i in self.right:
-			if i == None:
-				s += " Eps"
-			else:
-				s += " " + "<" + i + ">"
-		return s
-
-	def __init__(self, name, right):
-		self.name = name
-		self.right = right
+		return 'Token(' + self.type + ')'
 
 class Grammar:
-	def __init__(self, terminals, rules):
+	def __init__(self, terminals, rules, semantic):
 		self.terminals = terminals
 		self.productions = {}
 		self.nonterminals = []
+		self.assoc = None
+		self.precedence = None
+		self.annotatedRules = {}
+		i = 0
+		for rule in rules:
+			self.annotatedRules[rule] = semantic[i]
+			i+=1
+
 
 		self.rules = rules
 		for rule in rules:
-			if rule.name not in self.productions:
-				self.productions[rule.name] = []
-			self.productions[rule.name].append(rule.right)
+			if rule[0] not in self.productions:
+				self.productions[rule[0]] = []
+			self.productions[rule[0]].append(rule[1])
 
 		for i in self.productions:
 			if i not in self.nonterminals:
@@ -73,6 +75,24 @@ class Grammar:
 				total.remove(None)
 
 		return total
+
+	def setAssoc(self, assoc):
+		self.assoc = assoc
+
+	def setPrecedence(self, precedence):
+		self.precedence = precedence
+
+
+class InternalTree(Token):
+	def __init__(self, type, data):
+		self.type = type
+		self.data = data
+
+	def isTerminal(self):
+		return False
+
+	def __repr__(self):
+		return "Node("  + self.type + ')'
 
 nodeCounter = 0
 
@@ -128,6 +148,8 @@ class LALRParser:
 		self.mergedNodes = {} # map merged nodes (same LR(0) items) to ids
 		self.table = None # parser table
 
+		self.hasConflicts = False
+
 		self.createParser() # generate parser, graph + table + compression
 
 	def createParser(self):
@@ -139,9 +161,61 @@ class LALRParser:
 		self.findNodesToMerge(graph, [])
 		self.table = [{i:[] for i in self.grammar.terminals + self.grammar.nonterminals} for j in range( len(self.mergedNodes) )]
 		self.createTable(graph, [])
+		#self.printTable()
+		self.invertedRuleDict = {v:k for k, v in self.ruleDict.items()}
+		
+		self.hasConflicts = self.fixConflicts()
 		self.printTable()
 
-		self.invertedRuleDict = {v:k for k, v in self.ruleDict.items()}
+
+	def fixConflicts(self):
+		conflict = False
+		print(self.invertedRuleDict)
+		for i in range(len(self.mergedNodes)):
+			for j in self.grammar.terminals + self.grammar.nonterminals:
+				if len(self.table[i][j]) > 1:
+					l = self.table[i][j]
+					if len(l) == 2:
+						if l[0][0] == 'shift' or l[1][0] == 'shift': # shift-reduce, can be solved
+							r = None
+							s = None
+							if l[0][1] == 'reduce':
+								r = l[0]
+								s = l[1]
+							else:
+								r = l[1]
+								s = l[0]
+
+							opReduce = self.invertedRuleDict[ r[1] ] [1][-2] # get r[1] (reduce index), then get second element (right part of the production), then get the operator
+							opShift = j
+							#print('reduce op', opReduce)
+
+							if self.grammar.assoc != None and opReduce == opShift:
+								if opReduce in self.grammar.assoc:
+									if self.grammar.assoc[opReduce] == 'left':
+										self.table[i][j] = r
+									else:
+										self.table[i][j] = s
+									continue
+							if self.grammar.precedence != None:
+								if (opReduce, opShift) in self.grammar.precedence:
+									self.table[i][j] = r
+									continue
+								elif (opShift, opReduce) in self.grammar.precedence:
+									self.table[i][j] = s
+									continue
+
+					conflict = True
+					print('conflict not solved', self.table[i][j])
+					for prod in self.table[i][j]:
+						if prod[0] == 'reduce':
+							print(prod[0], self.invertedRuleDict[prod[1]])
+				elif len(self.table[i][j]) == 1:
+					self.table[i][j] = self.table[i][j][0]
+				else:
+					self.table[i][j] = None
+
+		return conflict
 
 	def getNextNodeId(self):
 		a = self.nodeCount
@@ -173,6 +247,7 @@ class LALRParser:
 		if m not in self.mergedNodes:
 			self.mergedNodes[m] = gNode
 			gNode.rowId = self.rowCount
+			print(gNode.data, gNode.rowId)
 			self.rowCount += 1
 		else:
 			gNode.rowId = self.mergedNodes[m].rowId
@@ -216,16 +291,25 @@ class LALRParser:
 			l = []
 			for k in self.grammar.terminals + self.grammar.nonterminals:
 				item = []
-				for i in row[k]:
-					if len(i) == 0:
-						item.append('')
-					elif i[0] == 'shift':
-						item.append('S' + str(i[1]))
-					elif i[0] == 'reduce':
-						item.append('R' + str(i[1]))
+
+				if row[k] != None:
+					if not isinstance(row[k], list): # if row is not a list, iterate over a list with only one element
+						r = [row[k]]
 					else:
-						item.append(str(i[1]))
-				item = '/'.join(item)
+						r = row[k]
+
+					for i in r:
+						if len(i) == 0:
+							item.append('')
+						elif i[0] == 'shift':
+							item.append('S' + str(i[1]))
+						elif i[0] == 'reduce':
+							item.append('R' + str(i[1]))
+						else:
+							item.append(str(i[1]))
+					item = '/'.join(item)
+				else:
+					item = ''
 				l.append(item)
 			print(str(id) + ':\t' + '\t'.join(l))
 
@@ -244,7 +328,7 @@ class LALRParser:
 
 	def closure(self, rules, remainingSymbols, symbol, lookahead):
 		for right in self.grammar.productions[symbol]:
-			print(symbol, '->', right)
+			#print(symbol, '->', right)
 			s = (symbol, tuple(right))
 			
 			#those this complete rule exist? if not, added it with lookahead
@@ -266,7 +350,7 @@ class LALRParser:
 						remainingSymbols[nSymbol] = set()
 					remainingSymbols[nSymbol] |= newLA
 
-		print(rules)
+		#print(rules)
 
 	def getLookahead(self, right, lookahead):
 		la = self.grammar.FIRST(right[1:], set())
@@ -324,7 +408,16 @@ class LALRParser:
 
 		return graphNode
 
+	def getNodeData(self, node):
+		if isinstance(node, InternalTree):
+			return node.data
+		else:
+			return node
+
 	def parse(self, inp):
+		if self.hasConflicts:
+			raise ValueError('Conflicts must be solved first!')
+
 		queue = []
 		queue.append(0)
 		
@@ -337,10 +430,6 @@ class LALRParser:
 			#print(queue, t.type)
 
 			op = self.table[queue[-1]][t.type]
-			if len(op) > 1:
-				print('conflict')
-				break
-			op = op[0]
 
 			#print(op)
 			if op[0] == 'shift':
@@ -359,18 +448,30 @@ class LALRParser:
 				queue = queue[:-n]
 
 				children = [popped[i] for i in range(len(popped)) if i%2 == 0]
-				node = TreeNode(symbol, *children)
+				
+				data = None
+				if rule in self.grammar.annotatedRules:
+					s = self.grammar.annotatedRules[rule]
+					if callable(s[0]):
+						args = [self.getNodeData(children[i.index]) if isinstance(i, CHILD) else i for i in s[1:]]
+						data = s[0](*args)
+					elif isinstance(s[0], CHILD):
+						data = self.getNodeData(children[s[0].index])
+
+				node = InternalTree(symbol, data)
+
+
 				queue.append(node)
 				r = queue[-2]
 				c = queue[-1].type
 				if len(queue) >= 2 and queue[-2] == 0 and queue[-1].type == 'S': # TODO: Fix this
 					solved = True
 					break
-				queue.append(self.table[r][c][0][1])
+				queue.append(self.table[r][c][1])
 
 
 		tree = queue[-1]
-		return tree
+		return tree.data
 
 def pop(d):
 	for i in d:
@@ -384,58 +485,92 @@ def isBlank(s):
 			return False
 	return True
 
-def readGrammar(f):
+def readGrammar(f, semantic):
 	f = open(f)
 	lines = f.readlines()
 	terminals = lines[0].split()
 	terminals.append('$')
 	lines = lines[1:]
 
+	operatorPrecedence = [] # pair of tuples, the first element has higher precedence
+	operatorAssoc = {} # maps each operator to a string, with left or right
+
 	rules = []
 	for line in lines:
 		if isBlank(line):
 			continue
 
-		left, right = line.split('->')
-		left = left.strip()
-		r = right.split('|')
+		special = line.split()
+		if special[0][0] == '%':
+			if special[0] == '%left' or special[0] == '%right':
+				r = special[0][1:]
+				for op in special[1:]:
+					operatorAssoc[op] = r
+			if special[0] == '%priority':
+				special.pop(0)
+				for op1 in range(len(special)):
+					for op2 in range(op1+1, len(special)):
+						operatorPrecedence.append((special[op1], special[op2]))
+		else:
+			left, right = line.split('->')
+			left = left.strip()
+			r = right.split('|')
 
 
-		for prod in r:
-			l = prod.split()
-			l = [i for i in l if i != 'eps']
-			rules.append( Rule(left, l) )
+			for prod in r:
+				l = prod.split()
+				l = [i for i in l if i != 'eps']
+				rules.append( (left, tuple(l)) )
+
+	print(operatorPrecedence, operatorAssoc)
 
 	#print(terminals, rules)
-	return Grammar(terminals, rules)
+	g = Grammar(terminals, rules, semantic=semantic)
+	g.setPrecedence(operatorPrecedence)
+	g.setAssoc(operatorAssoc)
+	return g
 
 
-g = readGrammar("grammar_lookahead.txt")
-parser = LALRParser(g, "S")
-
-
-class TreeNode(Token):
+class Node:
 	def __init__(self, type, *children):
 		self.type = type
 		self.children = children
-
-	def isTerminal(self):
-		return False
-
 	def __repr__(self):
-		return "Node("  + self.type + ')'
+		return 'Node(' + self.type + ')'
 
-	def printTree(self, depth):
-		print('  ' * depth + self.type)
-		for c in self.children:
-			if c.isTerminal():
-				print('  ' * (depth+1) + c.type)
-			else:
-				c.printTree(depth+1)
+class Terminal:
+	def __init__(self, type, value):
+		self.type = type
+		self.value = value
 
+semantic = [[CHILD(0)],
+[Node, 'mul', CHILD(0), CHILD(2)],
+[Node, 'add', CHILD(0), CHILD(2)],
+[CHILD(0)]]
+
+g = readGrammar("conflicts.txt", semantic=semantic)
+parser = LALRParser(g, "S")
 
 #inp = [Token('a', 3), Token('a', 5), Token('b', 4), Token('b', 1), Token('$')]
+'''
 inp = [Token('a', 3), Token('b', 5), Token('b', 4), Token('a', 1), Token('$')]
 S = parser.parse(inp)
 S.printTree(0)
+'''
+
+
+inp = [Token('int', 3), Token('+'), Token('int', 3), Token('+'), Token('int', 4), Token('*'), Token('int', 2), Token('$')]
+S = parser.parse(inp)
+
+def calc(t):
+	if t.type == 'int':
+		return t.value
+	elif t.type == 'mul':
+		return calc(t.children[0]) * calc(t.children[1])
+	elif t.type == 'add':
+		return calc(t.children[0]) + calc(t.children[1])
+
+print(S)
+print(calc(S))
+
 
