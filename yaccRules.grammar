@@ -1,0 +1,10 @@
+Code VertSlash Token Arrow
+
+S -> Rules
+Rules -> Rules Token Arrow Productions | eps
+Productions -> ProductionList Production
+ProductionList -> ProductionList Production VertSlash | eps
+Production -> TokenList C
+C -> Code | eps
+TokenList -> TokenList Token | Token
+

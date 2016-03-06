@@ -1,0 +1,10 @@
+
+
+S -> AssignList {childToken(0)}
+AssignList -> AssignList Assign {childToken(0).append(childToken(1))} 
+			| Assign {[childToken(0)]}
+Assign -> Id = Op ; {('Assign', childToken(0), childToken(2))}
+Op -> Op + Num {("Add \"\"", childToken(0), childToken(2))} | Num {childToken(0)}
+	| Op - Num {('Sub', childToken(0), childToken(2))} | Num {childToken(0)}
+
+

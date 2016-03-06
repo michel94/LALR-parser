@@ -1,0 +1,30 @@
+
+a = 3
+b = 2
+
+
+
+
+
+grammar:
+
+
+S -> ExprList
+ExprList -> ExprList Expr
+Expr -> 
+
+Value -> Mul | Add
+Mul -> 
+
+
+
+-> |
+
+
+Symbol -> Productions
+Productions -> Productions | Production
+Production -> terminals {*}
+Production -> terminals
+terminals
+terminal
+

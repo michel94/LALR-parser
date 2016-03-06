@@ -1,0 +1,7 @@
+String Number
+
+
+Decl -> Id = Expr ;
+Expr -> Terminal
+
+Terminal -> String | Number
