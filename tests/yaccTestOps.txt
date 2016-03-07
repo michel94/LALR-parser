@@ -1,0 +1,15 @@
+
+%left + *
+%priority * +
+
+S -> AssignList {v = childToken(0)}
+
+AssignList -> AssignList Assign {v = childToken(0) + [childToken(1)]}
+			| Assign {v = [childToken(0)]}
+Assign -> Id = Op ; {v = ('Assign', childToken(0), childToken(2))}
+
+Op -> Op + Op {v = ('Add', childToken(0), childToken(2))}
+	| Op * Op {v = ('Mul', childToken(0), childToken(2))}
+	| Num {v = childToken(0)}
+
+
