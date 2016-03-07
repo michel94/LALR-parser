@@ -103,16 +103,14 @@ class LALRParser:
 
 		self.table = [{i:[] for i in self.grammar.terminals + self.grammar.nonterminals} for j in range( len(nodeList) )]
 		self.createTable(graph, [])
-		self.printTable()
 
 		self.invertedRuleDict = {v:k for k, v in self.ruleDict.items()}
 		
 		self.hasConflicts = self.fixConflicts()
-
+		self.printTable()
 
 	def fixConflicts(self):
 		conflict = False
-		print('invertedRuleDict', self.invertedRuleDict)
 		for i in range(len(self.mergedNodes)):
 			for j in self.grammar.terminals + self.grammar.nonterminals:
 				if len(self.table[i][j]) > 1:
@@ -128,7 +126,6 @@ class LALRParser:
 								r = l[1]
 								s = l[0]
 
-							#print(l, s, r)
 							#print(self.invertedRuleDict[ r[1] ])
 							if len(self.invertedRuleDict[ r[1] ][1] ) > 1:
 								opReduce = self.invertedRuleDict[ r[1] ] [1][-2] # get r[1] (reduce index), then get second element (right part of the production), then get the operator
@@ -193,7 +190,7 @@ class LALRParser:
 		if m not in self.mergedNodes:
 			self.mergedNodes[m] = gNode
 			gNode.rowId = self.rowCount
-			print(gNode.data, gNode.rowId)
+			print('row:', self.rowCount, 'nodeId:', gNode.id)
 			self.rowCount += 1
 		else:
 			gNode.rowId = self.mergedNodes[m].rowId
@@ -275,7 +272,6 @@ class LALRParser:
 
 	def closure(self, rules, remainingSymbols, symbol, lookahead):
 		for right in self.grammar.productions[symbol]:
-			#print(symbol, '->', right)
 			s = (symbol, tuple(right))
 			
 			#does this complete rule exist? if not, added it with lookahead
@@ -297,7 +293,6 @@ class LALRParser:
 						remainingSymbols[nSymbol] = set()
 					remainingSymbols[nSymbol] |= newLA
 
-		#print(rules)
 
 	def getLookahead(self, right, lookahead):
 		la = self.grammar.FIRST(right[1:], set())
@@ -377,11 +372,9 @@ class LALRParser:
 		solved = False
 
 		while True:
-			#print(queue, t.type)
 
 			op = self.table[queue[-1]][t.type]
-			#print(queue[-1], t.type, op)
-			print(queue)
+			#print(queue, t.type, op)
 			
 			if op == None:
 				l = inputSize - len(inp)
@@ -408,14 +401,16 @@ class LALRParser:
 				children = [popped[i] for i in range(len(popped)) if i%2 == 0]
 				
 				data = None
+				v = None
 				if rule in self.grammar.annotatedRules:
 					s = self.grammar.annotatedRules[rule]
-					print('YEY', s)
 					if self.evalSemantic:
 						def childToken(n):
 							return self.getNodeData(children[n])
-
-						data = eval(s)
+						
+						l = locals()
+						r = exec(s, {}, l)
+						data = l['v']
 					else:
 						if type(s) is list and len(s) > 0 and callable(s[0]):
 							args = [self.getNodeData(children[i.index]) if isinstance(i, CHILD) else i for i in s[1:]]

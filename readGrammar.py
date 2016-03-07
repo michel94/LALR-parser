@@ -67,9 +67,7 @@ inputBuffer = re.sub("\"([^\"\n\\]|\\[^'\n]|(\\[\\\"\'nt])*)*\\?", f, inputBuffe
 #inputBuffer = re.sub('"([^\"])*"', f, inputBuffer)
 print('inputBuffer:', inputBuffer, 'END')
 
-
 codeHandler = CodeHandler()
-
 annotatedRules = ''
 while True:
 	if see() == EOF:
@@ -80,8 +78,8 @@ while True:
 		annotatedRules += pick()
 
 
-print(annotatedRules, codeHandler.getCode())
-print(annotatedRules)
+#print(annotatedRules, codeHandler.getCode())
+#print(annotatedRules)
 
 Arrow = PygToken.Arrow
 VertSlash = PygToken.VertSlash
@@ -170,3 +168,5 @@ g2 = Grammar(['Id', 'Num', '=', '-', '+', '$', ';'], rules, semanticRules)
 languageParser = LALRParser(g2, 'S', evalSemantic=True)
 s = languageParser.parse(codeInp)
 print(s)
+
+

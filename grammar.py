@@ -6,7 +6,7 @@ def isBlank(s):
 	return True
 
 class Grammar:
-	def __init__(self, terminals, rules, semantic):
+	def __init__(self, terminals, rules, semantic=None):
 		self.terminals = terminals
 		self.productions = {}
 		self.nonterminals = []
@@ -14,7 +14,7 @@ class Grammar:
 		self.precedence = None
 		self.annotatedRules = {}
 		i = 0
-		print(len(semantic), len(rules))
+
 		if semantic != None:
 			for rule in rules:
 				self.annotatedRules[rule] = semantic[i]
@@ -74,7 +74,7 @@ class Grammar:
 
 
 
-def readGrammar(f, semantic):
+def readGrammar(f, semantic=None):
 	f = open(f)
 	lines = f.readlines()
 	terminals = lines[0].split()
@@ -111,7 +111,7 @@ def readGrammar(f, semantic):
 				l = [i for i in l if i != 'eps']
 				rules.append( (left, tuple(l)) )
 
-	print(operatorPrecedence, operatorAssoc)
+	#print(operatorPrecedence, operatorAssoc)
 
 	#print(terminals, rules)
 	g = Grammar(terminals, rules, semantic=semantic)

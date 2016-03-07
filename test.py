@@ -17,7 +17,7 @@ semantic = [[CHILD(0)],
 [CHILD(0)]]
 '''
 
-g = readGrammar("grammar1.txt", semantic=None)
+g = readGrammar("tests/grammar1.txt")
 parser = LALRParser(g, "S")
 
 #inp = [Token('a', 3), Token('a', 5), Token('b', 4), Token('b', 1), Token('$')]
@@ -28,7 +28,7 @@ S.printTree(0)
 '''
 #inp = [Token('int', 3), Token('+'), Token('int', 3), Token('+'), Token('int', 4), Token('*'), Token('int', 2), Token('$')]
 
-inp = [Token('a'), Token('b'), Token('b'), Token('b'), Token('$')]
+inp = [Token('a'), Token('b'), Token('b'), Token('$')]
 S = parser.parse(inp)
 
 '''

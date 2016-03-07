@@ -1,8 +1,9 @@
-Code VertSlash Token Arrow
+Left Code VertSlash Token Macro
 
-S -> Rules
-Rules -> Rules Token Arrow Productions | eps
-Productions -> ProductionList Production
+S -> Rule Rules
+Rules -> Rule Rules | eps
+Rule -> Left Right | Macro TokenList
+Right -> ProductionList Production
 ProductionList -> ProductionList Production VertSlash | eps
 Production -> TokenList C
 C -> Code | eps
